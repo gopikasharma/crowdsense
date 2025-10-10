@@ -124,6 +124,13 @@ class CrowdSenseApp(QMainWindow):
         self.peak_marker = None
         self.offpeak_marker = None
 
+        # Intrusion Detection Parameters
+        self.intrusion_detection_enabled = False
+        self.intrusion_alert_active = False
+        # Define a default restricted zone (a polygon). You can adjust these coordinates.
+        self.restricted_zone = np.array([[100, 200], [100, 450], [400, 450], [400, 200]], dtype=np.int32)
+        # --- END OF BLOCK ---
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -737,9 +744,16 @@ class CrowdSenseApp(QMainWindow):
         people_graph_widget = self.create_people_graph_widget()
         peak_time_widget = self.create_peak_time_widget()
 
+        people_count_widget = self.create_people_count_widget()
+        crowd_detection_widget = self.create_crowd_detection_widget()
+        intrusion_widget = self.create_intrusion_widget() # <-- ADD THIS LINE
+        people_graph_widget = self.create_people_graph_widget()
+        peak_time_widget = self.create_peak_time_widget()
+
         metrics_layout.addWidget(metrics_header)
         metrics_layout.addWidget(people_count_widget)
         metrics_layout.addWidget(crowd_detection_widget)
+        metrics_layout.addWidget(intrusion_widget)
         metrics_layout.addWidget(people_graph_widget, 1)  # Graph should stretch
         metrics_layout.addWidget(peak_time_widget)
         metrics_layout.addStretch(1)
@@ -1002,6 +1016,67 @@ class CrowdSenseApp(QMainWindow):
 
         return crowd_widget
 
+    def create_intrusion_widget(self):
+        """Create widget for intrusion detection and alerts."""
+        intrusion_widget = QWidget()
+        intrusion_widget.setStyleSheet(f"""
+            background-color: {WIDGET_BG_COLOR};
+            border-radius: 4px;
+        """)
+
+        intrusion_layout = QVBoxLayout(intrusion_widget)
+        intrusion_layout.setContentsMargins(12, 12, 12, 12)
+        intrusion_layout.setSpacing(8)
+
+        header_container = QWidget()
+        header_container.setStyleSheet("background-color: transparent; border: none;")
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+
+        intrusion_header = QLabel("Restricted Zone Monitoring")
+        intrusion_header.setStyleSheet("""
+            font-family: Arial;
+            font-size: 14px;
+            color: #CCCCCC;
+            border: none;
+        """)
+
+        self.intrusion_toggle = ToggleSwitch()
+        self.intrusion_toggle.toggled.connect(self.on_intrusion_detection_toggled)
+        self.intrusion_toggle.setEnabled(False)  # Disabled until a video is loaded
+
+        header_layout.addWidget(intrusion_header)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.intrusion_toggle)
+
+        # --- NEW: Intrusion Alert Indicator ---
+        self.intrusion_alert_container = QWidget()
+        self.intrusion_alert_container.setStyleSheet(f"""
+            background-color: #2A2A2A;
+            border-radius: 4px;
+            border: 1px solid {BORDER_COLOR};
+        """)
+        self.intrusion_alert_container.setVisible(False) # Hidden until enabled
+
+        alert_layout = QHBoxLayout(self.intrusion_alert_container)
+        alert_layout.setContentsMargins(10, 8, 10, 8)
+        alert_layout.setSpacing(8)
+
+        self.intrusion_alert_icon = QLabel("🛡️")
+        self.intrusion_alert_icon.setStyleSheet("font-size: 16px; color: #555555; border: none;")
+
+        self.intrusion_alert_text = QLabel("Zone is clear")
+        self.intrusion_alert_text.setStyleSheet("font-size: 12px; color: #AAAAAA; border: none;")
+
+        alert_layout.addWidget(self.intrusion_alert_icon)
+        alert_layout.addWidget(self.intrusion_alert_text, 1)
+
+        intrusion_layout.addWidget(header_container)
+        intrusion_layout.addWidget(self.intrusion_alert_container)
+
+        return intrusion_widget
+
     def on_crowd_detection_toggled(self, enabled):
         """Handle crowd detection toggle switch changes"""
         self.crowd_detection_enabled = enabled
@@ -1026,6 +1101,42 @@ class CrowdSenseApp(QMainWindow):
              if self.cap is not None and self.cap.isOpened() and not self.paused:
                   self.update_people_graph(self.smoothed_people_count)
 
+    def on_intrusion_detection_toggled(self, enabled):
+        """Handle intrusion detection toggle switch changes."""
+        self.intrusion_detection_enabled = enabled
+        self.intrusion_toggle.setChecked(enabled)
+        self.intrusion_alert_container.setVisible(enabled)
+        if not enabled:
+            self.update_intrusion_alert_status(False) # Reset status when disabled
+
+    def update_intrusion_alert_status(self, alert_active, intruder_count=0):
+        """Update the intrusion alert status indicator."""
+        if self.intrusion_alert_active == alert_active:
+            # If the status is the same, just update the text if the count changed
+            if alert_active:
+                self.intrusion_alert_text.setText(f"ALERT! {intruder_count} Intruders Detected")
+            return
+
+        self.intrusion_alert_active = alert_active
+
+        if alert_active:
+            self.intrusion_alert_container.setStyleSheet("""
+                background-color: #4e1c1c;
+                border-radius: 4px;
+                border: 1px solid #cc3232;
+            """)
+            self.intrusion_alert_icon.setStyleSheet("font-size: 16px; color: #ff5555; border: none;")
+            self.intrusion_alert_text.setStyleSheet("font-size: 12px; color: #ff9999; border: none;")
+            self.intrusion_alert_text.setText(f"ALERT! {intruder_count} Intruders Detected")
+        else:
+            self.intrusion_alert_container.setStyleSheet(f"""
+                background-color: #2A2A2A;
+                border-radius: 4px;
+                border: 1px solid {BORDER_COLOR};
+            """)
+            self.intrusion_alert_icon.setStyleSheet("font-size: 16px; color: #555555; border: none;")
+            self.intrusion_alert_text.setStyleSheet("font-size: 12px; color: #AAAAAA; border: none;")
+            self.intrusion_alert_text.setText("Zone is clear")
 
     def on_crowd_size_threshold_changed(self, value):
         """Handle crowd size threshold slider change"""
@@ -1344,7 +1455,7 @@ class CrowdSenseApp(QMainWindow):
         # Create a copy of the frame for display
         # Important: Ensure frame is not None
         if frame is None:
-             return None
+            return None
 
         display_frame = frame.copy()
 
@@ -1354,42 +1465,51 @@ class CrowdSenseApp(QMainWindow):
             heatmap = self.update_heatmap(display_frame, boxes)
 
             if heatmap is not None and np.max(heatmap) > 0:
-                 # Normalize heatmap for visualization (0 to 1)
-                 heatmap_norm = cv2.normalize(heatmap, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+                # Normalize heatmap for visualization (0 to 1)
+                heatmap_norm = cv2.normalize(heatmap, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
 
-                 # Ensure minimum value for blue background in low activity areas
-                 # Applying this after normalization might be more consistent
-                 viz_heatmap = np.maximum(heatmap_norm, 0.1)
+                # Ensure minimum value for blue background in low activity areas
+                viz_heatmap = np.maximum(heatmap_norm, 0.1)
 
-                 # Convert to 8-bit for colormap
-                 viz_heatmap_8bit = (viz_heatmap * 255).astype(np.uint8)
+                # Convert to 8-bit for colormap
+                viz_heatmap_8bit = (viz_heatmap * 255).astype(np.uint8)
 
-                 # Apply JET colormap to get blue->green->red gradient
-                 heatmap_colored = cv2.applyColorMap(viz_heatmap_8bit, cv2.COLORMAP_JET)
+                # Apply JET colormap to get blue->green->red gradient
+                heatmap_colored = cv2.applyColorMap(viz_heatmap_8bit, cv2.COLORMAP_JET)
 
-                 # Darken the original frame to make heatmap more visible
-                 darkened_frame = cv2.addWeighted(display_frame, 0.4, np.zeros_like(display_frame), 0.6, 0)
+                # Darken the original frame to make heatmap more visible
+                darkened_frame = cv2.addWeighted(display_frame, 0.4, np.zeros_like(display_frame), 0.6, 0)
 
-                 # Blend the heatmap with the darkened original frame using heatmap_opacity
-                 display_frame = cv2.addWeighted(heatmap_colored, self.heatmap_opacity, darkened_frame, 1 - self.heatmap_opacity, 0)
+                # Blend the heatmap with the darkened original frame using heatmap_opacity
+                display_frame = cv2.addWeighted(heatmap_colored, self.heatmap_opacity, darkened_frame, 1 - self.heatmap_opacity, 0)
 
-                 # Add grid lines for better visualization
-                 h, w = display_frame.shape[:2]
-                 grid_spacing = 50
+                # Add grid lines for better visualization
+                h, w = display_frame.shape[:2]
+                grid_spacing = 50
 
-                 # Draw vertical grid lines
-                 for x in range(0, w, grid_spacing):
-                      cv2.line(display_frame, (x, 0), (x, h), GRID_COLOR, 1)
+                # Draw vertical grid lines
+                for x in range(0, w, grid_spacing):
+                    cv2.line(display_frame, (x, 0), (x, h), GRID_COLOR, 1)
 
-                 # Draw horizontal grid lines
-                 for y in range(0, h, grid_spacing):
-                      cv2.line(display_frame, (0, y), (w, y), GRID_COLOR, 1)
-            # If heatmap is enabled but no heatmap data (e.g., no detections yet),
-            # still return the original frame copy
-            # else: # No heatmap data, return original frame copy
-                 # pass (display_frame is already frame.copy())
+                # Draw horizontal grid lines
+                for y in range(0, h, grid_spacing):
+                    cv2.line(display_frame, (0, y), (w, y), GRID_COLOR, 1)
+            # If heatmap is enabled but no heatmap data, we still proceed to draw other overlays
+            # on the original frame copy.
 
-        # Add threshold alert visualization if active (applied AFTER heatmap)
+        # --- NEW: Draw the restricted zone on the frame ---
+        # This is placed here so it draws on top of the heatmap, but before other alerts.
+        if self.intrusion_detection_enabled:
+            zone_color = (0, 0, 200) if self.intrusion_alert_active else (0, 200, 0) # Red if alert, else Green
+            cv2.polylines(display_frame, [self.restricted_zone], isClosed=True, color=zone_color, thickness=2)
+            # Add a semi-transparent overlay to the zone
+            overlay = display_frame.copy()
+            cv2.fillPoly(overlay, [self.restricted_zone], zone_color)
+            alpha = 0.2 # Transparency factor
+            display_frame = cv2.addWeighted(overlay, alpha, display_frame, 1 - alpha, 0)
+
+
+        # Add crowd threshold alert visualization if active (applied AFTER heatmap and zone)
         if self.crowd_detection_enabled and self.threshold_alert_active:
             # Add red border to indicate alert
             h, w = display_frame.shape[:2]
@@ -1899,6 +2019,7 @@ class CrowdSenseApp(QMainWindow):
         # Enable controls related to video playback
         self.heatmap_toggle.setEnabled(True)
         self.crowd_toggle.setEnabled(True)
+        self.intrusion_toggle.setEnabled(True)
         self.export_graph_button.setEnabled(True)
         # Heatmap export enabled only if toggle is also on
         self.export_heatmap_button.setEnabled(self.heatmap_enabled)
@@ -2093,6 +2214,12 @@ class CrowdSenseApp(QMainWindow):
              self.crowd_settings_container.setVisible(False) # Hide settings
         self.crowd_toggle.setEnabled(False)
 
+        if self.intrusion_detection_enabled:
+            self.intrusion_toggle.setChecked(False)
+            self.intrusion_detection_enabled = False
+            self.intrusion_alert_container.setVisible(False)
+        self.intrusion_toggle.setEnabled(False)
+
 
         # Disable export buttons
         self.export_heatmap_button.setEnabled(False)
@@ -2264,6 +2391,25 @@ class CrowdSenseApp(QMainWindow):
         if self.crowd_detection_enabled:
             self.check_threshold_crossing(processed_frame_with_boxes) # Pass frame for potential visualization
 
+        if self.intrusion_detection_enabled:
+            intruder_count = 0
+            # Loop through every person detected
+            for box in boxes:
+                x1, y1, x2, y2 = box
+                # Use the bottom-center point of the box for accuracy
+                foot_point = (int((x1 + x2) / 2), y2)
+                
+                # Check if the point is inside our restricted zone
+                if cv2.pointPolygonTest(self.restricted_zone, foot_point, False) >= 0:
+                    intruder_count += 1 # Increment the counter
+                    # Draw a red box and text for THIS intruder
+                    cv2.rectangle(processed_frame_with_boxes, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                    cv2.putText(processed_frame_with_boxes, "INTRUDER", (x1, y1 - 10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
+            # Update the alert status based on whether any intruders were found
+            is_intrusion = intruder_count > 0
+            self.update_intrusion_alert_status(is_intrusion, intruder_count)
 
         # Update the people count graph with smoothed value
         self.update_people_graph(self.smoothed_people_count)
