@@ -7,7 +7,7 @@ import urllib.request
 import time
 
 from PyQt6.QtCore import QThread, pyqtSignal
-from ultralytics import YOLO
+from ultralytics import YOLO, RTDETR
 
 class ModelDownloadThread(QThread):
     """Thread for downloading YOLO models"""
@@ -119,17 +119,25 @@ class YoloDetectionThread(QThread):
         self.wait()
 
     def load_model(self):
-        """Load YOLO model"""
+        """Load YOLO or RT-DETR model"""
         if self.loading_model:
             return
 
         self.loading_model = True
 
         try:
-            self.model = YOLO(self.model_path)
+            # Check if the filename contains "rtdetr" to determine which class to use
+            if "rtdetr" in self.model_path.lower():
+                print(f"Loading RT-DETR model: {self.model_path}")
+                self.model = RTDETR(self.model_path)
+            else:
+                print(f"Loading YOLO model: {self.model_path}")
+                self.model = YOLO(self.model_path)
+                
             self.model_loaded.emit(True, f"Model loaded successfully from {self.model_path}")
         except Exception as e:
-            error_msg = f"Error loading YOLO model: {e}"
+            error_msg = f"Error loading model: {e}"
+            print(error_msg)
             self.model_loaded.emit(False, error_msg)
 
         self.loading_model = False

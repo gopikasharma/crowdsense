@@ -117,5 +117,17 @@ available_models = {
         "url": "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8x.pt",
         "description": "Best accuracy, slowest performance",
         "size": "136.5 MB"
+    },
+    "RT-DETR-L (Large)": {
+        "path": "rtdetr-l.pt",
+        "url": "https://github.com/ultralytics/assets/releases/download/v8.2.0/rtdetr-l.pt",
+        "description": "Transformer-based, high accuracy",
+        "size": "63.0 MB"
+    },
+    "RT-DETR-X (XLarge)": {
+        "path": "rtdetr-x.pt",
+        "url": "https://github.com/ultralytics/assets/releases/download/v8.2.0/rtdetr-x.pt",
+        "description": "Highest accuracy transformer, requires strong GPU",
+        "size": "106.0 MB"
     }
 }
