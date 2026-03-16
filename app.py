@@ -1311,33 +1311,24 @@ class CrowdSenseApp(QMainWindow):
              self.stop_button.setEnabled(True)
              self.restart_button.setEnabled(True)
 
-
     def populate_sources(self):
         # Try to find sources directory
         sources_dir = os.path.join(os.getcwd(), "sources")
 
         self.source_combo.clear() # Clear existing items first
 
+        # --- NEW: Always add Live Camera as the first option ---
+        self.source_combo.addItem("🔴 Live Web Camera", "CAMERA_0")
+
         if os.path.exists(sources_dir) and os.path.isdir(sources_dir):
             # List all files in the sources directory
             video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv']
-            found_videos = False
-            for file in sorted(os.listdir(sources_dir)): # Sort files alphabetically
+            for file in sorted(os.listdir(sources_dir)): 
                 if any(file.lower().endswith(ext) for ext in video_extensions):
-                    self.source_combo.addItem(file, os.path.join(sources_dir, file))
-                    found_videos = True
-
-            # If no videos found, add a placeholder
-            if not found_videos:
-                self.source_combo.addItem("No videos found in 'sources'", "")
-                self.source_combo.setEnabled(False) # Disable if no videos
-            else:
-                 self.source_combo.setEnabled(True)
-        else:
-            # If sources directory doesn't exist, add a placeholder and disable
-            self.source_combo.addItem("'sources' directory not found", "")
-            self.source_combo.setEnabled(False)
-
+                    self.source_combo.addItem(f"📁 {file}", os.path.join(sources_dir, file))
+        
+        # Always enable because the camera is always available
+        self.source_combo.setEnabled(True)
 
     def process_frame_with_heatmap(self, frame, boxes):
         """Process a frame, applying heatmap overlay if enabled"""
@@ -1384,10 +1375,6 @@ class CrowdSenseApp(QMainWindow):
                  # Draw horizontal grid lines
                  for y in range(0, h, grid_spacing):
                       cv2.line(display_frame, (0, y), (w, y), GRID_COLOR, 1)
-            # If heatmap is enabled but no heatmap data (e.g., no detections yet),
-            # still return the original frame copy
-            # else: # No heatmap data, return original frame copy
-                 # pass (display_frame is already frame.copy())
 
         # Add threshold alert visualization if active (applied AFTER heatmap)
         if self.crowd_detection_enabled and self.threshold_alert_active:
@@ -1480,7 +1467,6 @@ class CrowdSenseApp(QMainWindow):
             x_max = min(low_w - 1, foot_x + radius)
 
             # Efficiently update neighbors using slicing and distance calculation if needed,
-            # or simpler loop as in original:
             for y in range(y_min, y_max + 1):
                  for x in range(x_min, x_max + 1):
                       if x == foot_x and y == foot_y:
@@ -1491,8 +1477,6 @@ class CrowdSenseApp(QMainWindow):
                            dist = np.sqrt(dist_sq)
                            intensity = max(0.0, 1.0 - (dist / radius)) * 0.7 # Weighted intensity
                            current_heatmap[y, x] = max(current_heatmap[y, x], intensity)
-
-
 
         # Apply Gaussian blur passes only if there were detections
         if detections_in_frame:
@@ -1518,16 +1502,13 @@ class CrowdSenseApp(QMainWindow):
             self.aggregate_frame_count += 1
 
         # Cap the maximum value of the decaying accumulator to prevent excessive brightness
-        # This normalization should happen *after* adding the current frame's intensity
         max_accum_val = np.max(self.heatmap_accumulator)
         if max_accum_val > 1.0:
             self.heatmap_accumulator /= max_accum_val
         # Ensure accumulator values stay non-negative
         self.heatmap_accumulator = np.maximum(self.heatmap_accumulator, 0.0)
 
-
         # Upsample back to original resolution for display
-        # Use INTER_LINEAR for smoother results
         return cv2.resize(self.heatmap_accumulator, (w, h), interpolation=cv2.INTER_LINEAR)
 
 
@@ -1748,13 +1729,6 @@ class CrowdSenseApp(QMainWindow):
             if not self.yolo_thread.isRunning():
                  self.yolo_thread.set_model_path(self.model_path) # Ensure correct path
                  self.yolo_thread.start()
-            # If it was already running (e.g., stopped before download), restart it
-            # This case might be redundant if we always stop before download starts
-            # else: # This branch might not be needed if stop() is always called before download
-                 # self.yolo_thread.set_model_path(self.model_path)
-                 # self.yolo_thread.start()
-
-
         else:
             # Download failed
             self.model_status.setText(f"YOLO Model: Download failed for {self.current_model_key}!")
@@ -1775,13 +1749,8 @@ class CrowdSenseApp(QMainWindow):
 
             if default_index != -1:
                  self.model_combo.setCurrentIndex(default_index) # Revert UI selection
-                 # Trigger on_model_changed to attempt loading the default model
-                 # This will check if the default exists or trigger its download if necessary
-                 # self.on_model_changed(default_index) # Call directly
             else:
-                 # Fallback if default model isn't in combo for some reason
                  self.model_status.setText("YOLO Model: Default model not found!")
-
 
     def on_model_loaded(self, success, message):
         """Handle model loading completion"""
@@ -1797,12 +1766,8 @@ class CrowdSenseApp(QMainWindow):
         else:
             self.yolo_ready = False
             self.model_status.setText(f"YOLO Model: Load failed - {self.current_model_key}")
-            # Optionally show the error message in tooltip or dialog
             self.model_status.setToolTip(message)
             self.model_progress.setVisible(False)
-            # Consider reverting to default model if loading fails? Or just leave as failed?
-            # Leaving as failed state seems reasonable.
-
 
     def open_file_dialog(self):
         """Open file dialog for selecting video files"""
@@ -1817,48 +1782,49 @@ class CrowdSenseApp(QMainWindow):
             self.load_video_from_path(file_path)
 
     def load_video_from_path(self, file_path):
-        """Load and play video from the given file path"""
-        print(f"Attempting to load video: {file_path}") # Debug print
+        """Load and play video from the given file path OR camera index"""
+        print(f"Attempting to load source: {file_path}") 
 
         # Stop any existing video playback first
-        self.stop_video() # Use the stop_video method for clean shutdown
+        self.stop_video() 
 
-        if not os.path.exists(file_path):
+        # --- NEW: Check if it's a file (string) and if it exists ---
+        is_camera = isinstance(file_path, int)
+        
+        if not is_camera and not os.path.exists(file_path):
             self.video_label.set_default_content()
-            self.model_status.setText("Error: Video file not found.") # Provide feedback
+            self.model_status.setText("Error: Video file not found.") 
             print(f"Error: File not found at {file_path}")
             return
 
         # Make sure model is loaded or loading
         if not self.yolo_ready and not self.yolo_thread.isRunning():
-             # If not ready and not even trying to load, start loading default
              print("YOLO not ready, initiating model load...")
              self.model_status.setText("YOLO Model: Loading...")
              self.model_progress.setRange(0, 0)
              self.model_progress.setVisible(True)
              QApplication.processEvents()
-             self.yolo_thread.set_model_path(self.model_path) # Ensure path is set
+             self.yolo_thread.set_model_path(self.model_path) 
              self.yolo_thread.start()
-             # We can proceed to load the video, detection will start when model is ready
 
-        # Initialize video capture
+        # Initialize video capture (this automatically handles both files and webcams)
         try:
             self.cap = cv2.VideoCapture(file_path)
             if not self.cap.isOpened():
-                print(f"Error: Failed to open video file {file_path} with OpenCV.")
+                print(f"Error: Failed to open source {file_path}.")
                 self.video_label.set_default_content()
-                self.model_status.setText("Error: Could not open video file.")
-                self.cap = None # Ensure cap is None if failed
+                self.model_status.setText("Error: Could not open video source.")
+                self.cap = None 
                 return
         except Exception as e:
-             print(f"Exception opening video file {file_path}: {e}")
+             print(f"Exception opening source {file_path}: {e}")
              self.video_label.set_default_content()
              self.model_status.setText("Error: Exception opening video.")
              self.cap = None
              return
 
-        print("Video opened successfully.")
-
+        print("Video/Camera opened successfully.")
+        
         # --- Reset states for new video ---
         self.video_time_ms = 0
         self.last_frame_time = time.time() # Initialize timer baseline
@@ -1929,9 +1895,8 @@ class CrowdSenseApp(QMainWindow):
         self.play_button.setEnabled(False)
         self.pause_button.setEnabled(True)
         self.stop_button.setEnabled(True)
-        self.restart_button.setEnabled(True)
+        self.restart_button.setEnabled(not is_camera) # Don't restart live cameras
         self.end_playback_label.setVisible(False) # Hide end label
-
 
     def start_video(self):
         """Starts video playback from dropdown or resumes paused video."""
@@ -1941,31 +1906,23 @@ class CrowdSenseApp(QMainWindow):
             self.video_thread.pause(False)
             self.play_button.setEnabled(False)
             self.pause_button.setEnabled(True)
-            self.end_playback_label.setVisible(False) # Hide end label on resume
-            # Restart timer baseline on resume
+            self.end_playback_label.setVisible(False) 
             self.last_frame_time = time.time()
             return
 
         # Case 2: Start new video from dropdown
-        # Get selected video path
         selected_index = self.source_combo.currentIndex()
-        # Ensure index is valid and combobox is enabled
         if selected_index < 0 or not self.source_combo.isEnabled():
-            print("No valid source selected or source combo disabled.")
-            # Optionally show message to user
             self.model_status.setText("Select a valid sample source.")
             return
 
-        video_path = self.source_combo.itemData(selected_index)
+        source_data = self.source_combo.itemData(selected_index)
 
-        if not video_path or not os.path.exists(video_path):
-            print(f"Selected source path is invalid or does not exist: {video_path}")
-            self.video_label.set_default_content()
-            self.model_status.setText("Error: Selected sample video not found.")
-            return
-
-        # Use load_video_from_path to handle setup and start
-        self.load_video_from_path(video_path)
+        # --- NEW: Branch logic for Camera vs File ---
+        if source_data == "CAMERA_0":
+            self.load_video_from_path(0) # 0 is the default webcam index
+        elif source_data:
+            self.load_video_from_path(source_data)
 
 
     def pause_video(self):
@@ -2004,7 +1961,6 @@ class CrowdSenseApp(QMainWindow):
         # Pause YOLO processing and clear its queue
         if hasattr(self, 'yolo_thread') and self.yolo_thread is not None:
             self.yolo_thread.frame_queue = [] # Clear pending frames
-            # Don't stop the YOLO thread itself, just clear queue
 
         # Release video capture object safely
         if self.cap is not None:
@@ -2032,7 +1988,6 @@ class CrowdSenseApp(QMainWindow):
         self.smoothed_people_count = 0
         self.people_count_value.setText("0")
         self.people_count_value.setStyleSheet(LARGE_VALUE_FONT_STYLE) # Reset style
-
 
         # Reset video timer
         self.video_time_ms = 0
@@ -2075,7 +2030,7 @@ class CrowdSenseApp(QMainWindow):
 
         # Reset threshold alert state
         self.threshold_alert_active = False
-        if self.crowd_detection_enabled: # Only update visual if it was enabled
+        if self.crowd_detection_enabled: 
              self.update_crowd_alert_status(False)
         self.threshold_history.clear()
 
@@ -2113,11 +2068,7 @@ class CrowdSenseApp(QMainWindow):
     def on_video_ended(self):
         """Handle video reaching the end"""
         print("Video ended signal received.")
-        # Video thread already stops itself upon sending signal if ret is False
-        # Ensure UI reflects the ended state
-
         self.paused = True # Treat end state as paused
-        # No need to call video_thread.pause(True) if thread stopped itself
 
         # Show end of playback indicator
         self.end_playback_label.setVisible(True)
@@ -2144,9 +2095,6 @@ class CrowdSenseApp(QMainWindow):
         # Update the display
         self.timer_display.setText(time_str)
 
-        # No need for QApplication.processEvents() here, happens frequently enough
-
-
     def process_video_frame(self, frame):
         """Process video frame received from VideoFrameThread and send to YOLO"""
         if frame is None:
@@ -2157,10 +2105,7 @@ class CrowdSenseApp(QMainWindow):
             current_time = time.time()
             if self.last_frame_time > 0:
                 elapsed = int((current_time - self.last_frame_time) * 1000) # ms
-                # Use frame interval as a more reliable timing increment if available
-                # or cap elapsed time to avoid jumps during lag/resizes.
                 increment = self.frame_interval if self.frame_interval > 0 else max(1, elapsed)
-                # Avoid huge jumps if processing lagged significantly
                 increment = min(increment, 250) # Cap increment to e.g., 250ms
                 self.video_time_ms += increment
             self.last_frame_time = current_time
@@ -2174,15 +2119,12 @@ class CrowdSenseApp(QMainWindow):
             self.yolo_thread.add_frame(frame)
         else:
             # If YOLO is not ready, display the raw frame without detection/heatmap
-            # Process with empty boxes list for consistency
             display_frame_no_yolo = self.process_frame_with_heatmap(frame, [])
 
             if display_frame_no_yolo is not None:
                  self.displayed_frame = display_frame_no_yolo.copy()
                  rgb_frame = cv2.cvtColor(self.displayed_frame, cv2.COLOR_BGR2RGB)
                  self.display_frame(rgb_frame)
-            # If YOLO is loading, status message should already indicate that
-
 
     def update_peak_time_display(self):
         """Update peak and off-peak time displays and markers"""
@@ -2231,134 +2173,86 @@ class CrowdSenseApp(QMainWindow):
 
     def display_detection_results(self, processed_frame_with_boxes, people_count, boxes):
         """Display frame processed by YOLO, update counts, graph, heatmap, etc."""
-        # Note: processed_frame_with_boxes already has boxes drawn by YOLO thread
         if processed_frame_with_boxes is None:
             return
 
-        # Store the last detected boxes for use when toggling heatmap while paused
         self.last_detected_boxes = boxes.copy()
-
-        # Add current raw count to history for smoothing
         self.people_count_history.append(people_count)
 
-        # Calculate smoothed people count (moving average)
         if len(self.people_count_history) > 0:
             new_smoothed_count = round(np.mean(self.people_count_history))
         else:
-            new_smoothed_count = people_count # Should not happen if history is appended first
+            new_smoothed_count = people_count 
 
-        # Update internal state only if smoothed count changes
-        # This prevents unnecessary UI updates if count is stable
-        smoothed_count_changed = (new_smoothed_count != self.smoothed_people_count)
         self.smoothed_people_count = new_smoothed_count
 
-        # Update people count display
-        # Always update display text even if value is same, in case style needs resetting (e.g. after alert)
         self.people_count_value.setText(str(self.smoothed_people_count))
-        # Reset style if not in alert state
         if not self.threshold_alert_active:
              self.people_count_value.setStyleSheet(LARGE_VALUE_FONT_STYLE)
 
-
-        # Check for threshold crossing if crowd detection is enabled
         if self.crowd_detection_enabled:
-            self.check_threshold_crossing(processed_frame_with_boxes) # Pass frame for potential visualization
+            self.check_threshold_crossing(processed_frame_with_boxes) 
 
-
-        # Update the people count graph with smoothed value
         self.update_people_graph(self.smoothed_people_count)
 
-        # Track peak and off-peak based on smoothed count
         if self.smoothed_people_count > self.peak_count:
             self.peak_count = self.smoothed_people_count
             self.peak_time_ms = self.video_time_ms
             self.update_peak_time_display()
 
-        # Track off-peak only if count is positive and lower than current off-peak
         if self.smoothed_people_count > 0 and self.smoothed_people_count < self.offpeak_count:
             self.offpeak_count = self.smoothed_people_count
             self.offpeak_time_ms = self.video_time_ms
             self.update_peak_time_display()
 
-
-        # --- Frame Display ---
-        # The frame received ('processed_frame_with_boxes') already has YOLO boxes drawn.
-        # We now apply heatmap (if enabled) and alert borders (if active) on top of this.
-        # We use the raw self.current_frame for heatmap calculations, but overlay onto the processed frame.
-
-        # Get the frame to display by applying heatmap/alerts onto the YOLO output frame
         final_display_frame = self.process_frame_with_heatmap(processed_frame_with_boxes, boxes)
 
         if final_display_frame is not None:
-             # Store the final frame that includes heatmap/alerts
              self.displayed_frame = final_display_frame.copy()
-
-             # Convert to RGB for display
              rgb_frame = cv2.cvtColor(final_display_frame, cv2.COLOR_BGR2RGB)
-
-             # Display the processed frame
              self.display_frame(rgb_frame)
 
 
     def check_threshold_crossing(self, frame):
         """Check if smoothed people count exceeds threshold and update alert status."""
-        # Determine if alert should be active based on smoothed count vs threshold
         should_alert_be_active = (self.smoothed_people_count > self.crowd_size_threshold)
 
-        # Update the visual status only if the state changes
         if should_alert_be_active != self.threshold_alert_active:
              self.update_crowd_alert_status(should_alert_be_active, self.smoothed_people_count)
-             # No need to redraw frame here, display_detection_results handles it
 
 
     def display_frame(self, rgb_frame):
         """Display a video frame in the video_label, scaling it correctly."""
         if rgb_frame is None or not hasattr(self, 'video_label') or not self.video_label.isVisible():
-             # print("Debug: Skipping display_frame (no frame or label not ready)")
-             return # Don't process if no frame or label isn't ready
+             return 
 
         try:
             h, w, ch = rgb_frame.shape
             bytes_per_line = ch * w
             qt_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
 
-            # Get the current size of the video label
             label_size = self.video_label.size()
             if label_size.isEmpty() or label_size.width() <= 0 or label_size.height() <= 0:
-                 # print("Debug: Skipping display_frame (label size invalid)")
-                 # Label might not be fully initialized yet
                  return
 
-            # Scale the pixmap to fit the label size while preserving aspect ratio
             pixmap = QPixmap.fromImage(qt_image)
             scaled_pixmap = pixmap.scaled(label_size,
                                           Qt.AspectRatioMode.KeepAspectRatio,
                                           Qt.TransformationMode.SmoothTransformation)
 
-            # Hide the default content (icon/text) widgets before showing video
-            # This check might only be needed once, could be optimized
             if self.video_label.icon_label.isVisible():
                  self.video_label.icon_label.setVisible(False)
                  self.video_label.text_label.setVisible(False)
 
-
-            # Display the frame
             self.video_label.setPixmap(scaled_pixmap)
-            # Ensure alignment remains center even after setting pixmap
             self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         except Exception as e:
              print(f"Error in display_frame: {e}")
-             # Optionally, reset to default content on error?
-             # self.video_label.set_default_content()
-
 
     def resizeEvent(self, event):
         """Handle window resize events, redraw current frame."""
         super().resizeEvent(event)
-
-        # Redraw the currently displayed frame (could be raw or processed)
-        # Use self.displayed_frame as it represents what *should* be shown
         if self.displayed_frame is not None:
             try:
                  rgb_frame = cv2.cvtColor(self.displayed_frame, cv2.COLOR_BGR2RGB)
@@ -2367,38 +2261,30 @@ class CrowdSenseApp(QMainWindow):
                  print(f"CV2 Error during resize redraw: {e}")
             except Exception as e:
                  print(f"Error during resize redraw: {e}")
-        elif self.cap is None: # If no video loaded, ensure default content is shown
+        elif self.cap is None: 
              self.video_label.set_default_content()
 
 
     def closeEvent(self, event):
         """Handle application close event cleanly."""
         print("Close event triggered.")
-        # Stop the video thread first
         if self.video_thread is not None and self.video_thread.isRunning():
             print("Stopping video thread...")
             self.video_thread.stop()
-            self.video_thread.wait() # Wait for clean exit
+            self.video_thread.wait() 
             print("Video thread stopped.")
 
-        # Stop the YOLO thread
         if self.yolo_thread is not None and self.yolo_thread.isRunning():
             print("Stopping YOLO thread...")
             self.yolo_thread.stop()
-            self.yolo_thread.wait() # Wait for clean exit
+            self.yolo_thread.wait() 
             print("YOLO thread stopped.")
 
-        # Stop download thread if running
         if self.download_thread is not None and self.download_thread.isRunning():
              print("Stopping download thread...")
-             # Download thread might not have a stop method, terminate might be needed
-             # Or rely on application exit to kill it. Let's assume wait is sufficient.
-             # self.download_thread.stop() # If it had one
              self.download_thread.wait()
              print("Download thread finished.")
 
-
-        # Release video capture
         if self.cap is not None and self.cap.isOpened():
             print("Releasing video capture...")
             self.cap.release()
@@ -2408,10 +2294,8 @@ class CrowdSenseApp(QMainWindow):
         print("Accepting close event.")
         event.accept()
 
-
     def export_count_graph(self):
         """Export the people count graph as an image"""
-        # Import matplotlib here to avoid loading it unless exporting
         try:
              import matplotlib.pyplot as plt
              from matplotlib.figure import Figure
@@ -2420,29 +2304,24 @@ class CrowdSenseApp(QMainWindow):
              self.show_export_error_message("Matplotlib is required for graph export. Please install it (`pip install matplotlib`).")
              return
 
-        # Check if we have graph data
         if not self.time_data or not self.people_data:
             self.show_export_error_message("No graph data available to export.")
             return
 
-        # Ask the user to select an output file/location
         default_filename = f"people_count_graph_{time.strftime('%Y%m%d-%H%M%S')}.png"
         default_path = os.path.join(os.getcwd(), "exports", default_filename)
-        # Ensure exports directory exists for suggestion
         os.makedirs(os.path.join(os.getcwd(), "exports"), exist_ok=True)
 
         output_path, _ = QFileDialog.getSaveFileName(
             self, "Save People Count Graph", default_path, "PNG Images (*.png);;All Files (*)"
         )
 
-        if not output_path:  # User canceled
+        if not output_path:
             return
 
-        # Ensure filename ends with .png
         if not output_path.lower().endswith(".png"):
              output_path += ".png"
 
-        # Ensure the chosen directory exists
         output_dir = os.path.dirname(output_path)
         if not os.path.exists(output_dir):
              try:
@@ -2451,110 +2330,82 @@ class CrowdSenseApp(QMainWindow):
                   self.show_export_error_message(f"Could not create output directory:\n{output_dir}\nError: {e}")
                   return
 
-
-        # Create a high-resolution figure
         try:
-             fig = Figure(figsize=(12, 7), dpi=150) # Slightly larger figure
+             fig = Figure(figsize=(12, 7), dpi=150) 
              canvas = FigureCanvas(fig)
              ax = fig.add_subplot(111)
 
-             # Plot the data with styling
              ax.plot(list(self.time_data), list(self.people_data),
                      marker='o', markersize=4, linewidth=2, color=ACCENT_COLOR, label='People Count')
 
-             # Add threshold line if it was enabled
              if self.crowd_detection_enabled:
                   ax.axhline(y=self.crowd_size_threshold, color='r', linestyle='--', linewidth=1, label=f'Threshold ({self.crowd_size_threshold})')
 
-             # Add peak/off-peak markers if they exist
              if self.peak_marker is not None and self.peak_count > 0:
                   ax.plot(self.peak_time_ms / 1000.0, self.peak_count, 'o', markersize=8, color='#FF5555', label=f'Peak ({self.peak_count})')
              if self.offpeak_marker is not None and self.offpeak_count < float('inf'):
                    ax.plot(self.offpeak_time_ms / 1000.0, self.offpeak_count, 'o', markersize=8, color='#5599FF', label=f'Off-Peak ({self.offpeak_count})')
 
-
-             # Style the plot to match UI theme
              ax.set_facecolor(WIDGET_BG_COLOR)
              fig.patch.set_facecolor(PANEL_BG_COLOR)
-
-             # Grid styling
              ax.grid(True, linestyle='--', alpha=0.3, color='#888888')
 
-             # Spine styling (borders)
              for spine in ax.spines.values():
                   spine.set_color(BORDER_COLOR)
 
-             # Set labels and title
              ax.set_xlabel('Time (seconds)', color=TEXT_COLOR)
              ax.set_ylabel('People Count', color=TEXT_COLOR)
-             ax.set_title('People Count Over Time', color=TEXT_COLOR, fontsize=14, weight='bold') # Match UI text
+             ax.set_title('People Count Over Time', color=TEXT_COLOR, fontsize=14, weight='bold')
 
-             # Style the ticks
              ax.tick_params(axis='x', colors=MUTED_TEXT_COLOR)
              ax.tick_params(axis='y', colors=MUTED_TEXT_COLOR)
 
-             # Add legend if threshold or markers were added
              if self.crowd_detection_enabled or self.peak_marker or self.offpeak_marker:
                   legend = ax.legend()
-                  plt.setp(legend.get_texts(), color=MUTED_TEXT_COLOR) # Style legend text
+                  plt.setp(legend.get_texts(), color=MUTED_TEXT_COLOR)
                   legend.get_frame().set_facecolor(WIDGET_BG_COLOR)
                   legend.get_frame().set_edgecolor(BORDER_COLOR)
 
-
-             # Adjust layout
              fig.tight_layout()
-
-             # Save the figure
              fig.savefig(output_path)
              print(f"Graph saved to: {output_path}")
 
-             # Show success message
              self.show_export_success_message(output_path)
 
         except Exception as e:
              print(f"Error during graph export: {e}")
              self.show_export_error_message(f"Failed to export graph:\n{e}")
         finally:
-             # Ensure matplotlib figure is closed to release memory
              if 'fig' in locals():
                   plt.close(fig)
 
-
-
     def export_heatmap(self):
         """Export the aggregate heatmap directly after selecting a file location"""
-        # Check if we have aggregate heatmap data
         if self.aggregate_heatmap_accumulator is None or self.aggregate_frame_count <= 0:
             self.show_export_error_message("No heatmap data collected yet. Play a video with heatmap enabled first.")
             return
 
-        # Also check if we have a reference frame dimensions
         if self.current_frame is None and self.displayed_frame is None:
              self.show_export_error_message("Cannot determine heatmap size. Play or load a video first.")
              return
 
-        # Determine output size from current/displayed frame
         ref_frame = self.current_frame if self.current_frame is not None else self.displayed_frame
         h, w = ref_frame.shape[:2]
 
-        # Ask the user to select an output file/location
         default_filename = f"aggregate_heatmap_{time.strftime('%Y%m%d-%H%M%S')}.png"
         default_path = os.path.join(os.getcwd(), "exports", default_filename)
-        # Ensure exports directory exists for suggestion
         os.makedirs(os.path.join(os.getcwd(), "exports"), exist_ok=True)
 
         output_path, _ = QFileDialog.getSaveFileName(
             self, "Save Aggregate Heatmap", default_path, "PNG Images (*.png);;All Files (*)"
         )
 
-        if not output_path:  # User canceled
+        if not output_path:
             return
 
-        # Ensure filename ends with .png
         if not output_path.lower().endswith(".png"):
              output_path += ".png"
 
-        # Ensure the chosen directory exists
         output_dir = os.path.dirname(output_path)
         if not os.path.exists(output_dir):
              try:
@@ -2564,8 +2415,6 @@ class CrowdSenseApp(QMainWindow):
                   return
 
         try:
-             # Create a normalized version of the aggregate heatmap
-             # Normalize by the max value in the aggregate heatmap for better contrast
              aggregate_norm = self.aggregate_heatmap_accumulator.copy()
              max_aggr_val = np.max(aggregate_norm)
 
@@ -2573,47 +2422,34 @@ class CrowdSenseApp(QMainWindow):
                   aggregate_norm /= max_aggr_val
              else:
                   print("Warning: Aggregate heatmap has no intensity.")
-                  # Result will be black or just the background frame
 
-             # Upsample normalized aggregate heatmap to original frame size
              heatmap_resized = cv2.resize(aggregate_norm, (w, h), interpolation=cv2.INTER_LINEAR)
+             heatmap_blurred = cv2.GaussianBlur(heatmap_resized, (21, 21), 0)
 
-             # Apply additional blur for smoother visualization (optional, but can look better)
-             heatmap_blurred = cv2.GaussianBlur(heatmap_resized, (21, 21), 0) # Kernel size adjustable
-
-             # Convert blurred heatmap to colormap
-             # Ensure values are clipped between 0 and 1 before scaling to 255
              heatmap_clipped = np.clip(heatmap_blurred, 0, 1)
              heatmap_8bit = (heatmap_clipped * 255).astype(np.uint8)
              heatmap_colored = cv2.applyColorMap(heatmap_8bit, cv2.COLORMAP_JET)
 
-             # Create a background using the last displayed frame if available, else black
              if self.displayed_frame is not None:
                  background = cv2.addWeighted(self.displayed_frame, 0.4, np.zeros_like(self.displayed_frame), 0.6, 0)
-                 result = cv2.addWeighted(heatmap_colored, 0.7, background, 0.3, 0) # Blend heatmap over background
+                 result = cv2.addWeighted(heatmap_colored, 0.7, background, 0.3, 0) 
              else:
-                 # Fallback to just the colored heatmap if no background frame
                  result = heatmap_colored
 
-             # Save the result
              cv2.imwrite(output_path, result)
              print(f"Heatmap saved to: {output_path}")
 
-             # Show success message
              self.show_export_success_message(output_path)
 
         except Exception as e:
              print(f"Error exporting heatmap: {e}")
              self.show_export_error_message(f"Failed to export heatmap:\n{e}")
 
-
     def show_export_success_message(self, output_path):
         """Show success message for heatmap/graph export"""
-        # Import platform-specific tools here
         import subprocess
         import platform
 
-        # Check if the path actually exists before showing message
         if not os.path.exists(output_path):
              print(f"Export path does not exist after saving: {output_path}")
              self.show_export_error_message(f"File not found after saving:\n{output_path}")
@@ -2624,10 +2460,9 @@ class CrowdSenseApp(QMainWindow):
         msg.setWindowTitle("Export Complete")
         msg.setText("Export completed successfully!")
         msg.setInformativeText(f"File saved to:\n{output_path}")
-        # Offer to open the file's location
         msg.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Open)
         open_button = msg.button(QMessageBox.StandardButton.Open)
-        open_button.setText("Open Location") # More accurate text
+        open_button.setText("Open Location") 
 
         result = msg.exec()
 
@@ -2636,15 +2471,13 @@ class CrowdSenseApp(QMainWindow):
                  output_dir = os.path.dirname(output_path)
                  if platform.system() == "Windows":
                       os.startfile(output_dir)
-                 elif platform.system() == "Darwin":  # macOS
+                 elif platform.system() == "Darwin":  
                       subprocess.Popen(["open", output_dir])
-                 else:  # Linux and other Unix-like
+                 else:  
                       subprocess.Popen(["xdg-open", output_dir])
             except Exception as e:
                  print(f"Error opening directory {output_dir}: {e}")
-                 # Show a secondary message if opening fails
                  QMessageBox.warning(self, "Open Location Failed", f"Could not open the directory:\n{output_dir}\nError: {e}")
-
 
     def show_export_error_message(self, error_msg):
         """Show error message for export failures"""
